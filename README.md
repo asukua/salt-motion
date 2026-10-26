@@ -2,7 +2,9 @@
 
 Salt Motion 为 **Salt Player for Windows（椒盐音乐）** 提供 Apple Music 动态专辑封面，以及歌曲右键菜单中的专辑封面自定义。
 
-**当前版本：0.2.0** · [下载安装包](https://github.com/asukua/salt-motion/releases/latest) · [发行记录](https://github.com/asukua/salt-motion/releases)
+**当前版本：0.2.1** · [下载安装包](https://github.com/asukua/salt-motion/releases/latest) · [发行记录](https://github.com/asukua/salt-motion/releases)
+
+0.2.1 补全包内开源链接字段，更新后可在 Salt Player「模组管理 → Salt Motion → 开源链接」打开本仓库。旧版安装包需要更新后才能启用该菜单。
 
 目前适配 **Windows / Steam 版 SPW 1.19.2**。插件会核对宿主接口；其他版本尚未验证。
 
@@ -30,7 +32,7 @@ Salt Motion 为 **Salt Player for Windows（椒盐音乐）** 提供 Apple Music
 
 ## 安装
 
-1. 在 [Releases](https://github.com/asukua/salt-motion/releases/latest) 下载 **plugin-dev.saltmotion-0.2.0.spmod**，无需下载源码。
+1. 在 [Releases](https://github.com/asukua/salt-motion/releases/latest) 下载 **plugin-dev.saltmotion-0.2.1.spmod**，无需下载源码。
 2. 打开 SPW → 创意工坊 → 模组管理 → 导入模组，选择该文件。
 3. 启用 **Salt Motion**，按播放器提示授予修改应用行为与界面、读取音乐库、修改音乐库权限。
 
@@ -63,7 +65,7 @@ Nirvana | Nevermind = https://music.apple.com/us/album/nevermind/1440783617
 ```powershell
 $env:JAVA_HOME = 'C:\path\to\jdk-25'
 .\gradlew.bat test plugin
-python scripts/verify-package.py build/libs/plugin-dev.saltmotion-0.2.0.spmod
+python scripts/verify-package.py build/libs/plugin-dev.saltmotion-0.2.1.spmod
 ```
 
 宿主精简运行时验证（JDK 版本应与 SPW runtime 相同）：
@@ -77,7 +79,7 @@ python scripts/verify-package.py build/libs/plugin-dev.saltmotion-0.2.0.spmod
 
 脚本只在工作区复制运行时，并使用独立 JVM；不附加到正在运行的播放器。`scripts/verify-editor.ps1` 提供原生菜单、界面交互和副本写入验证，`-Online` 可执行公开来源检索。
 
-[0.2.0 验证记录](docs/release-0.2.0.md) · [封面编辑器设计](docs/cover-studio.md) · [搜索与匹配](docs/search.md) · [视频缓存与取帧](docs/cache-and-frames.md)
+[0.2.1 验证记录](docs/release-0.2.1.md) · [0.2.0 验证记录](docs/release-0.2.0.md) · [封面编辑器设计](docs/cover-studio.md) · [搜索与匹配](docs/search.md) · [视频缓存与取帧](docs/cache-and-frames.md)
 
 ## 开源与归属
 

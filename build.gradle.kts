@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "dev.saltmotion"
-version = "0.2.0"
+version = "0.2.1"
 java { toolchain.languageVersion.set(JavaLanguageVersion.of(25)) }
 kotlin {
     jvmToolchain(25)
@@ -63,5 +63,6 @@ spmod {
     PluginDescription = "动态专辑封面与多来源封面自定义"
     PluginProvider = "asukua"
     PluginHasConfig = true
+    PluginOpenSourceUrl = "https://github.com/asukua/salt-motion"
     PluginPermissions = listOf(PluginPermission.CLASS_TRANSFORM, PluginPermission.LIBRARY_READ, PluginPermission.LIBRARY_WRITE)
 }

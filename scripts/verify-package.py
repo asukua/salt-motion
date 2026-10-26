@@ -19,7 +19,8 @@ with zipfile.ZipFile(args.package) as package:
     headers = dict(line.split(":", 1) for line in unfolded.splitlines() if ":" in line)
     headers = {key: value.strip() for key, value in headers.items()}
     for key, value in {"Plugin-Id": "dev.saltmotion", "Plugin-Version": version,
-                       "Plugin-Class": "dev.saltmotion.SaltMotionPlugin", "Plugin-Name": "Salt Motion"}.items():
+                       "Plugin-Class": "dev.saltmotion.SaltMotionPlugin", "Plugin-Name": "Salt Motion",
+                       "Plugin-Open-Source-Url": "https://github.com/asukua/salt-motion"}.items():
         assert headers.get(key) == value, (key, headers.get(key), value)
     permission_line = re.search(r"^Plugin-Permissions:\s*([^\r\n]*)", unfolded, re.MULTILINE)
     permissions = set(re.split(r"[,;\s]+", permission_line[1].strip())) if permission_line else set()
