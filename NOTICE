@@ -1,0 +1,22 @@
+Salt Motion
+Copyright 2026 asukua and contributors
+
+The CPU frame decoder, owned-frame locking, JSON reader and public web-token
+discovery are adapted from Salt Artist, Copyright 2026 asukua and Salt Artist
+contributors, licensed under Apache-2.0: https://github.com/asukua/salt-artist
+Modified for independent album matching, square streams and cover rendering.
+
+SPW Workshop API and Gradle Wrapper are licensed under Apache-2.0.
+Kotlin, Compose, Skia, JNA and libmpv are provided by the host and are not bundled.
+The host's libmpv licensing remains applicable to that host distribution.
+
+Apple Music artwork and third-party trademarks belong to their rights holders.
+They are retrieved at runtime and are not covered by this source-code license.
+No Apple account credentials or user token are requested or stored.
+
+OkHttp 4.12.0 and Okio 3.9.1, Copyright Square, Inc., are distributed as
+separate JARs inside lib/ under Apache-2.0; see the included LICENSE.
+Project sources: https://github.com/square/okhttp/tree/parent-4.12.0
+and https://github.com/square/okio/tree/parent-3.9.1
+OkHttp's public suffix data and its original license notice are retained.
+These libraries replace the optional JDK HTTP module absent from SPW's runtime.

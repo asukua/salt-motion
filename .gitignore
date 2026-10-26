@@ -1,0 +1,8 @@
+.gradle/
+.kotlin/
+build/
+.work/
+.tools/
+.reference/
+.idea/
+*.iml

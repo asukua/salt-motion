@@ -1,0 +1,14 @@
+pluginManagement {
+    repositories { maven("https://jitpack.io"); gradlePluginPortal(); mavenCentral(); google() }
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == "com.xuncorp.spw.workshop") {
+                useModule("com.github.Moriafly.spw-workshop-api:spw-workshop-gradle-plugin:${requested.version}")
+            }
+        }
+    }
+}
+dependencyResolutionManagement {
+    repositories { mavenCentral(); google(); maven("https://jitpack.io") }
+}
+rootProject.name = "salt-motion"

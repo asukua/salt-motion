@@ -1,0 +1,12 @@
+{
+  "configs": [{
+    "title": "动态专辑封面",
+    "config": "motion.json",
+    "preferences": [
+      {"key":"enabled","type":"switch","title":"启用动态专辑封面","summary":"在播放页静音循环显示 Apple Music 的方形动态封面；没有可用素材时保留原封面","default_value":true},
+      {"key":"storefronts","type":"edittext","title":"Apple Music 地区顺序","summary":"使用英文逗号分隔，最多五个地区；默认 US,JP,CN","default_value":"US,JP,CN"},
+      {"key":"album_bindings","type":"edittext","title":"手动指定 Apple Music 专辑","summary":"格式：专辑艺人 | 专辑名 = AM专辑链接或ID；多条用分号或换行分隔。以歌曲标签中的专辑艺人为准，缺失时使用歌曲艺人","default_value":""},
+      {"key":"frame_rate","type":"list","title":"动画帧率","summary":"按目标时间调度取帧；实际提交及绘制帧率每十秒记录在诊断日志中","entries":["24 FPS（省资源）","30 FPS（默认）"],"entry_values":["24","30"],"default_value":"30"}
+    ]
+  }]
+}
