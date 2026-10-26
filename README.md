@@ -2,7 +2,7 @@
 
 Salt Motion 为 **Salt Player for Windows（椒盐音乐）** 提供 Apple Music 动态专辑封面，以及歌曲右键菜单中的专辑封面自定义。
 
-**当前版本：0.2.0** · [下载安装包](https://github.com/asukua/spw-dynamic-album-cover/releases/latest) · [发行记录](https://github.com/asukua/spw-dynamic-album-cover/releases)
+**当前版本：0.2.0** · [下载安装包](https://github.com/asukua/salt-motion/releases/latest) · [发行记录](https://github.com/asukua/salt-motion/releases)
 
 目前适配 **Windows / Steam 版 SPW 1.19.2**。插件会核对宿主接口；其他版本尚未验证。
 
@@ -30,7 +30,7 @@ Salt Motion 为 **Salt Player for Windows（椒盐音乐）** 提供 Apple Music
 
 ## 安装
 
-1. 在 [Releases](https://github.com/asukua/spw-dynamic-album-cover/releases/latest) 下载 **plugin-dev.saltmotion-0.2.0.spmod**，无需下载源码。
+1. 在 [Releases](https://github.com/asukua/salt-motion/releases/latest) 下载 **plugin-dev.saltmotion-0.2.0.spmod**，无需下载源码。
 2. 打开 SPW → 创意工坊 → 模组管理 → 导入模组，选择该文件。
 3. 启用 **Salt Motion**，按播放器提示授予修改应用行为与界面、读取音乐库、修改音乐库权限。
 
