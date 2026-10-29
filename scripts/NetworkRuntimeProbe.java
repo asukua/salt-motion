@@ -41,6 +41,7 @@ public class NetworkRuntimeProbe {
                 CoverRuntimeProbe.verify(loader, runtime);
                 System.out.println("PASS MotionRuntime startup construction and shutdown under packaged PF4J dependencies");
             }
+            loader.loadClass("CoverDiscoveryProbe").getMethod("verify",ClassLoader.class,Path.class).invoke(null,loader,probes.resolve("cover-discovery"));
             loader.loadClass("CoverEditorProbe").getMethod("main",String[].class).invoke(null,(Object)new String[]{probes.resolve("editor-resolution").toString()});
             if (args.length > 2 && args[2].equals("online")) {
                 Class<?> smoke = loader.loadClass("SmokeProbe");

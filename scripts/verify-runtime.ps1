@@ -40,7 +40,7 @@ try {
     $taskProbes = Join-Path $taskRoot ('build\runtime-check\probes-' + $taskPackageHash)
     New-Item -ItemType Directory -Force -Path $taskProbes | Out-Null
     $taskCompileClasspath = "$taskExtracted\classes;$taskExtracted\lib\*;$taskArchive"
-    & (Join-Path $taskJdk 'bin\javac.exe') -encoding UTF-8 -cp $taskCompileClasspath -d $taskProbes scripts\NetworkRuntimeProbe.java scripts\SmokeProbe.java scripts\CoverRuntimeProbe.java scripts\FrameRateProbe.java scripts\RenderLifecycleProbe.java scripts\CacheImageProbe.java scripts\CoverEditorProbe.java
+    & (Join-Path $taskJdk 'bin\javac.exe') -encoding UTF-8 -cp $taskCompileClasspath -d $taskProbes scripts\NetworkRuntimeProbe.java scripts\SmokeProbe.java scripts\CoverRuntimeProbe.java scripts\FrameRateProbe.java scripts\RenderLifecycleProbe.java scripts\CacheImageProbe.java scripts\CoverEditorProbe.java scripts\CoverDiscoveryProbe.java
     if ($LASTEXITCODE -ne 0) { throw 'Runtime probe compilation failed.' }
     $taskOutput = Join-Path $taskRoot 'build\reports\runtime-regression'
     New-Item -ItemType Directory -Force -Path $taskOutput | Out-Null

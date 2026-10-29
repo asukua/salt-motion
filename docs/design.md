@@ -2,6 +2,14 @@
 
 0.1.9 新增歌曲菜单与封面编辑器，当前接入、关键词搜索、图片覆盖及元数据写入约束见 [封面编辑器](cover-studio.md)。下文保留沿用的动态封面历史约束。
 
+## 0.2.2 的宿主更新兼容
+
+Steam 1.19.3 更换了播放页和编辑器依赖的混淆类名，按版本号直接拒绝会让接口未变化的后续更新也失效。播放页先匹配已核实的 1.19.2 / 1.19.3 类指纹；否则仅在宿主归档内查找具有 FullScreenCover 来源标记、两个完整方法签名和指定字节码位置的目标调用的唯一类，且不预加载待 Hook 类。无候选或多个候选时不接入。保留固定 BCI 是为了避免误把其他界面当作播放页；不能安全识别时保留原封面，不再弹出版本不适配提示。
+
+右键菜单、根界面、图片组件与主题的错误接入可能影响其他 UI，因此分别保留 1.19.2 / 1.19.3 的完整类指纹配置，只根据指纹选择，不因版本字符串变化单独拒绝。未来接口或字节码发生变化时，编辑器可能需要再次适配；其失败不会阻止已经验证的播放页接入，反之亦然。没有使用无条件 Hook 或猜测新 BCI，避免误改其他界面。
+
+隔离验证使用 1.19.3 实际宿主归档与精简运行时，覆盖原生菜单构建、真实方形播放页 Composable 的调用栈和 Modifier 连接；变更调试信息的候选可被结构识别，修改调用和多候选则被拒绝。这些检查不能代替导入后对真实窗口、圆形界面及切歌的验收。
+
 ## 0.1.7 的 AM 目录主搜索
 
 本节记录沿用的 0.1.7 搜索行为。当前版本新增实现见 [缓存与取帧说明](cache-and-frames.md)。搜索、回退及验证依据在 [搜索改动](search.md) 单处维护；最高分辨率和私有 CPU 软件渲染路径保持 0.1.6 的实现。下节保留高清版本的背景。
@@ -34,13 +42,13 @@ SPW dev23 没有公开的动态封面替换接口。实际宿主中，方形和�
 
 当前选择：Hook 两个返回 Modifier 的普通函数，仅当调用栈的类、方法、完整描述符和字节码位置都匹配已核实封面时，连接独立绘制节点。原生 Image 继续管理布局、圆角、圆形裁剪、旋转和 alpha。先按 lambda 所属类筛选，避免对普通曲库列表的所有调用进行栈扫描。
 
-当前登记 Steam 1.19.2。调用类为 androidx.compose.ui.ȇ（U+0207），其类 SHA-256、两个方法描述符和 BCI 在 [CoverTarget](../src/main/kotlin/dev/saltmotion/hook/CoverTarget.kt) 单处维护。方形入口为 drawWithCache，圆形入口为 graphicsLayer。verify-host.py 从该契约读取数据并核对实际 Code 指令；VerifyHost.java 用真实宿主解析器验证两种普通方法签名。资源检查不预加载待接入类。
+0.1.4 时登记 Steam 1.19.2。调用类为 androidx.compose.ui.ȇ（U+0207），其类 SHA-256、两个方法描述符和 BCI 在 [CoverTarget](../src/main/kotlin/dev/saltmotion/hook/CoverTarget.kt) 单处维护。方形入口为 drawWithCache，圆形入口为 graphicsLayer。verify-host.py 从该契约读取数据并核对实际 Code 指令；VerifyHost.java 用真实宿主解析器验证两种普通方法签名。资源检查不预加载待接入类。
 
 0.1.1 在真正的 Hook 回调中读取 StackFrame.descriptor 时会抛出 UnsupportedOperationException：JDK 25 要求 StackWalker 显式开启 RETAIN_CLASS_REFERENCE。宿主拦截 Hook 异常后仍显示插件已启用，动画节点实际未挂载，手动绑定同样无效。0.1.2 保留原有调用点校验，只在遍历期间允许方法签名访问；栈帧不持久缓存，不预加载宿主封面类。回归必须执行实际栈遍历，原先纯字符串 callsite 测试无法覆盖此约束。
 
 0.1.2 窗口日志随后证实调用点已命中但节点仍未挂载。实际 Steam 包的 WorkshopMethodAdvice.exit 字节码对 getResult() 只执行 POP，没有写回 @Advice.Return 参数，因此 setResult 不改变真实返回值。0.1.3 用 [CoverModifier](../src/main/kotlin/dev/saltmotion/hook/CoverModifier.kt) 连接节点：这两个调用都先创建 receiver.then(new Element)，Hook 只在返回对象为 CombinedModifier、outer 与原 receiver 引用相同、inner 为准确预期元素时，把新对象的 inner 改为 inner.then(animation)。宿主仍返回同一个对象；原 receiver、共享节点及已挂载节点均不修改。字段操作仅发生在新对象暴露给 Compose 之前，依赖 JDK 25 对普通实例 final 字段的反射支持；结构不符就保留静态封面并记录日志。没有修改宿主文件或 Advice，也未扩展全局 Hook 权限。真实宿主 probe 必须分别验证方形/圆形返回对象内含动画元素、原 receiver 未变和重复/错误连接被拒绝；仅创建 MotionCoverElement 不足以证明接入。
 
-代价：依赖精确宿主字节码和 JVM 调用栈，升级必须复核。版本或类字节不同则不注册。静态及解析器验证不证明宿主窗口中的栈、裁剪和交互已通过；以后若有正式封面接口应优先替换此适配。
+代价：依赖宿主字节码和 JVM 调用栈；0.2.2 起按本页顶部所述安全识别已知或结构相符的宿主，否则不注册。静态及解析器验证不证明宿主窗口中的栈、裁剪和交互已通过；以后若有正式封面接口应优先替换此适配。
 
 ## AM 身份与传输
 

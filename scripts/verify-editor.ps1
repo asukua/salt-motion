@@ -26,7 +26,7 @@ $taskHost=[IO.Path]::GetDirectoryName($taskArchive)
 $taskCommon=@('--enable-native-access=ALL-UNNAMED','-Xmx512M','-Dstdout.encoding=UTF-8','-Dstderr.encoding=UTF-8',"-Dskiko.library.path=$taskHost")
 Push-Location -LiteralPath $taskRoot
 try{
-    & (Join-Path $taskJdk 'bin\javac.exe') -encoding UTF-8 -cp $taskCp -d $taskProbe scripts\CoverEditorProbe.java scripts\CoverTagProbe.java scripts\NativeCoverCall.java scripts\ProbeAgent.java scripts\MenuInsertionProbe.java
+    & (Join-Path $taskJdk 'bin\javac.exe') -encoding UTF-8 -cp $taskCp -d $taskProbe scripts\CoverEditorProbe.java scripts\CoverTagProbe.java scripts\NativeCoverCall.java scripts\ProbeAgent.java scripts\MenuInsertionProbe.java scripts\CoverCallProbe.java
     if($LASTEXITCODE -ne 0){throw 'Editor probe compilation failed'}
     $taskArgs=@($taskOutput)
     if($Online){$taskArgs+='online'}
@@ -47,6 +47,8 @@ try{
     # This premain agent affects only the newly launched test JVM, never an existing process.
     & (Join-Path $taskJdk 'bin\java.exe') @taskCommon ("-javaagent:"+(Join-Path $taskProbe 'probe-agent.jar')) -cp "$taskProbe;$taskCp" MenuInsertionProbe (Join-Path $taskRoot 'build\reports\native-menu') 2>&1 | Tee-Object -FilePath build\editor-menu.log
     if($LASTEXITCODE -ne 0){throw 'Native menu insertion/click verification failed'}
+    & (Join-Path $taskJdk 'bin\java.exe') @taskCommon ("-javaagent:"+(Join-Path $taskProbe 'probe-agent.jar')) -cp "$taskRoot\build\classes\kotlin\test;$taskProbe;$taskCp" CoverCallProbe (Join-Path $taskUiOutput 'native-playback-square.png') 2>&1 | Tee-Object -FilePath build\playback-call.log
+    if($LASTEXITCODE -ne 0){throw 'Real host square cover callsite verification failed'}
     & $taskJava @taskCommon -cp "$taskRoot\build\classes\kotlin\test;$taskProbe;$taskCp" dev.saltmotion.StudioRenderProbe $taskUiOutput $taskOutput 2>&1 | Tee-Object -FilePath build\editor-ui.log
     if($LASTEXITCODE -ne 0){throw 'Compose UI or native cover override verification failed'}
     $taskPoster=Get-ChildItem -LiteralPath $taskOutput -File -Filter 'APPLE-album.*' | Where-Object Extension -in '.jpg','.png' | Select-Object -First 1 -ExpandProperty FullName

@@ -24,11 +24,9 @@ class SaltMotionPlugin(context: PluginContext) : SpwPlugin(context) {
     @Synchronized override fun start() {
         if (runtime != null) return
         val loader = WorkshopApi::class.java.classLoader
-        val bytes = loader.getResourceAsStream(CoverTarget.RESOURCE)?.use { it.readAllBytes() }
-        if (bytes == null || !CoverTarget.verified(pluginContext.spwVersion, bytes)) {
-            toast("Salt Motion 当前仅核实 Steam 版 SPW 1.19.2 的播放页封面接口")
-            return
-        }
+        val target = try { CoverTarget.discover(loader) }
+            catch (_: Exception) { null }
+            catch (_: LinkageError) { null }
         try {
             val created = WorkshopApi.manager.createConfigManager()
             manager = created
@@ -44,9 +42,15 @@ class SaltMotionPlugin(context: PluginContext) : SpwPlugin(context) {
                 stop()
                 return
             }
+            if (target == null) log.log("Playback cover contract unavailable; preserving the native cover")
             val state = MotionRuntime(log, MotionSettings.read(config), config.getConfigPath().parent.resolve("motion-cache"))
             runtime = state
-            state.studio?.let { hooks += dev.saltmotion.editor.EditorHooks.install(it) }
+            state.studio?.let { studio ->
+                // An unverified editor must not disable an independently verified playback hook.
+                try { hooks += dev.saltmotion.editor.EditorHooks.install(studio) }
+                catch (error: Exception) { log.log("Cover editor unavailable on this host: " + log.describe(error)) }
+                catch (error: LinkageError) { log.log("Cover editor unavailable on this host: " + log.describe(error)) }
+            }
             val changed = Consumer<ConfigHelper> {
                 synchronized(this) {
                     if (runtime === state) runCatching { state.update(MotionSettings.read(created.getConfig("motion.json"))) }
@@ -54,7 +58,7 @@ class SaltMotionPlugin(context: PluginContext) : SpwPlugin(context) {
             }
             listener = changed
             created.addConfigChangeListener(changed)
-            for (square in listOf(true, false)) {
+            if (target != null) for (square in listOf(true, false)) {
                 val owner = if (square) "androidx.compose.ui.draw.DrawModifierKt"
                     else "androidx.compose.ui.graphics.GraphicsLayerModifierKt"
                 val name = if (square) "drawWithCache" else "graphicsLayer"
@@ -62,8 +66,8 @@ class SaltMotionPlugin(context: PluginContext) : SpwPlugin(context) {
                     override fun after(call: MethodHookParam) {
                         if (call.throwable != null || !state.active) return
                         val callback = call.args.getOrNull(1) ?: return
-                        if (!callback.javaClass.name.startsWith(CoverTarget.CALLER + "$")) return
-                        if (!CoverTarget.onCoverStack(square)) return
+                        if (!callback.javaClass.name.startsWith(target.caller + "$")) return
+                        if (!CoverTarget.onCoverStack(square, target)) return
                         val original = call.result as? Modifier ?: return
                         val receiver = call.args.getOrNull(0) as? Modifier ?: return
                         try {
@@ -80,7 +84,12 @@ class SaltMotionPlugin(context: PluginContext) : SpwPlugin(context) {
                     }
                 })
             }
-            log.log("Started Salt Motion " + pluginContext.pluginVersion + " host=" + pluginContext.spwVersion + "; cover hooks registered")
+            if (hooks.isEmpty()) {
+                log.log("No verified hook available on this host; plugin stayed inactive")
+                stop()
+                return
+            }
+            log.log("Started Salt Motion " + pluginContext.pluginVersion + " host=" + pluginContext.spwVersion + "; registered hooks=" + hooks.size)
         } catch (error: Exception) {
             runtime?.log?.log("Startup failed: " + error.javaClass.name + ": " + error.message)
             stop()

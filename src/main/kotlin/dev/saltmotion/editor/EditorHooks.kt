@@ -6,8 +6,8 @@ import com.xuncorp.spw.workshop.api.hook.*
 import kotlin.Unit
 
 internal object EditorHooks {
-    val coilParameters = listOf("kotlin.jvm.functions.Function0","androidx.compose.ui.Modifier","kotlin.jvm.functions.Function2",
-        "androidx.compose.ui.\u0552","androidx.compose.ui.\u1050","kotlin.jvm.functions.Function1","androidx.compose.ui.graphics.painter.Painter",
+    val coilParameters get() = listOf("kotlin.jvm.functions.Function0","androidx.compose.ui.Modifier","kotlin.jvm.functions.Function2",
+        HostUiBridge.IMAGE_COMPONENT,HostUiBridge.IMAGE_OPTIONS,"kotlin.jvm.functions.Function1","androidx.compose.ui.graphics.painter.Painter",
         "kotlin.jvm.functions.Function4","kotlin.jvm.functions.Function5","kotlin.jvm.functions.Function4")
     fun install(studio: CoverStudio): List<HookHandle> {
         HostUiBridge.verify()

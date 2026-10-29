@@ -21,7 +21,7 @@ public final class NativeCoverCall {
         Class<?> builderType=loader.loadClass("coil3.request.ImageRequest$\u037f");Object builder=builderType.getConstructor(contextType).newInstance(context);
         builderType.getMethod("\u037f",Object.class).invoke(builder,audio);
         Object request=builderType.getMethod("\u037f").invoke(builder);
-        Class<?> optionsType=loader.loadClass("androidx.compose.ui.\u1050");
+        Class<?> optionsType=loader.loadClass(dev.saltmotion.editor.HostUiBridge.IMAGE_OPTIONS);
         Object options=optionsType.getConstructor(Alignment.class,ContentScale.class,float.class,long.class,String.class,int.class).newInstance(null,ContentScale.Companion.getCrop(),0f,0L,null,249);
         Class<?> imageBuilderType=loader.loadClass("coil3.ImageLoader$\u037f");Object imageBuilder=imageBuilderType.getConstructor(contextType).newInstance(context);
         imageBuilderType.getMethod("\u0528",Function0.class).invoke(imageBuilder,(Function0<Object>)()->null);

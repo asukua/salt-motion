@@ -74,10 +74,16 @@ p.add_argument("--jar", required=True, type=Path)
 args = p.parse_args()
 root = Path(__file__).resolve().parents[1]
 source = (root / "src/main/kotlin/dev/saltmotion/hook/CoverTarget.kt").read_text(encoding="utf-8")
-expected_hash = re.search(r'const val SHA256 = "([^"]+)"', source)[1]
+profiles = [
+    ("androidx/compose/ui/\u0207.class", re.search(r'const val SHA256 = "([^"]+)"', source)[1]),
+    ("androidx/compose/ui/\u0b26.class", re.search(r'const val NEXT_SHA256 = "([^"]+)"', source)[1]),
+]
 with zipfile.ZipFile(args.jar) as host:
-    raw = host.read("androidx/compose/ui/\u0207.class")
-assert hashlib.sha256(raw).hexdigest() == expected_hash, "Native cover class changed"
+    candidates = [(name, host.read(name)) for name, expected in profiles
+                  if name in host.namelist() and hashlib.sha256(host.read(name)).hexdigest() == expected]
+assert len(candidates) == 1, "No unique verified native cover profile"
+name, raw = candidates[0]
+print("PASS host profile", name.encode("unicode_escape").decode())
 cover = ClassFile(raw)
 for symbol, offset_symbol, owner, name in (
     ("SQUARE_DESCRIPTOR", "SQUARE_BCI", "androidx/compose/ui/draw/DrawModifierKt", "drawWithCache"),
