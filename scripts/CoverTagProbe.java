@@ -3,6 +3,9 @@ import java.nio.file.*;
 import java.util.*;
 import javax.sound.sampled.*;
 import java.io.*;
+import java.nio.channels.FileChannel;
+import com.sun.nio.file.ExtendedOpenOption;
+import org.jaudiotagger.audio.AudioFileIO;
 
 /** Copies user audio into the workspace before any writes; the source file is hashed before and after. */
 public final class CoverTagProbe{
@@ -25,6 +28,21 @@ public final class CoverTagProbe{
             if(!before.equals(hash(backup))||!before.equals(hash(source)))throw new AssertionError("Source or backup changed");
             if(!audio.equals(CoverTagWriter.audioHash(copy)))throw new AssertionError("Encoded audio changed");
             if(before.equals(hash(copy)))throw new AssertionError("Cover was not written");
+            if (ext.equalsIgnoreCase(".flac")) {
+                var embedded = AudioFileIO.read(copy.toFile()).getTag().getArtworkList().getFirst();
+                byte[] bytes = embedded.getBinaryData();
+                if (embedded.getPictureType() != 3) throw new AssertionError("Original or incorrect front cover");
+                if (Files.size(image) <= 0xff_ffff - 42) {
+                    if (!Arrays.equals(bytes, Files.readAllBytes(image))) throw new AssertionError("Cover bytes changed");
+                } else {
+                    try (var decoded = org.jetbrains.skia.Image.Companion.makeFromEncoded(bytes)) {
+                        if (Math.max(decoded.getWidth(), decoded.getHeight()) > 1920 || bytes.length > 0xff_ffff - 42) {
+                            throw new AssertionError("Oversized cover did not fit the FLAC metadata limit");
+                        }
+                    }
+                    System.out.println("PASS oversized source image written as a scaled, readable FLAC front cover");
+                }
+            }
             System.out.println("PASS embedded "+ext+" via raw native Vri with spaces/Unicode/#/%/+; original unchanged; exact backup; tags verified; encoded audio SHA-256 unchanged");
             Path corrupt=root.resolve("invalid-cover.jpg");Files.writeString(corrupt,"not an image");String committed=hash(copy);
             try{CoverTagWriter.write(copy,corrupt,root.resolve("backups"));throw new AssertionError("Invalid image accepted");}catch(Exception expected){}
@@ -35,5 +53,36 @@ public final class CoverTagProbe{
             if(!committed.equals(hash(copy)))throw new AssertionError("Cancelled write damaged audio");
             System.out.println("PASS cancellation before replace preserves "+ext);
         }
+        if (System.getProperty("os.name").startsWith("Windows") && Files.size(image) < 1_000_000) {
+            verifyWindowsFileSharing(root, wave, image);
+        }
+    }
+
+    private static void verifyWindowsFileSharing(Path root, Path wave, Path image) throws Exception {
+        Path copy = root.resolve("held-by-player.wav");
+        Files.copy(wave, copy, StandardCopyOption.REPLACE_EXISTING);
+        String before = hash(copy);
+        try (var held = FileChannel.open(copy, StandardOpenOption.READ, ExtendedOpenOption.NOSHARE_DELETE)) {
+            try {
+                CoverTagWriter.write(copy, image, root.resolve("backups"));
+                throw new AssertionError("Commit replaced an in-use file without delete sharing");
+            } catch (CoverTagWriter.ReplacementBlockedException error) {
+                if (!(error.getCause() instanceof FileSystemException) || !before.equals(hash(copy))) throw error;
+            }
+        }
+        try (var held = FileChannel.open(copy, StandardOpenOption.READ, ExtendedOpenOption.NOSHARE_DELETE)) {
+            var release = new Thread(() -> {
+                try { Thread.sleep(650); held.close(); }
+                catch (Exception error) { throw new AssertionError(error); }
+            });
+            release.start();
+            try {
+                Path backup = CoverTagWriter.write(copy, image, root.resolve("backups"));
+                if (!before.equals(hash(backup)) || before.equals(hash(copy))) throw new AssertionError("Retry failed");
+            } finally {
+                release.join();
+            }
+        }
+        System.out.println("PASS Windows sharing conflict preserves the original and retries when the handle closes");
     }
 }

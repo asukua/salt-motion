@@ -12,16 +12,20 @@ import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.node.currentValueOf
 import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.platform.LocalWindowInfo
+import com.xuncorp.spw.workshop.api.PlaybackExtensionPoint.MediaItem
 import com.xuncorp.spw.workshop.api.WorkshopApi
 import dev.saltmotion.MotionRuntime
 import dev.saltmotion.MotionSettings
 import dev.saltmotion.PluginLog
 import dev.saltmotion.am.AlbumKey
-import dev.saltmotion.artwork.HlsVariants
 import dev.saltmotion.artwork.MotionSession
 import dev.saltmotion.artwork.OwnedMotionFrame
 import dev.saltmotion.artwork.FrameSchedule
 import dev.saltmotion.artwork.FrameRateStats
+import dev.saltmotion.editor.CoverStudio
+import dev.saltmotion.editor.SavedCover
+import dev.saltmotion.editor.rasterImage
+import java.nio.file.Files
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,18 +34,18 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.jetbrains.skia.ColorAlphaType
-import org.jetbrains.skia.ColorType
-import org.jetbrains.skia.ImageInfo
+import org.jetbrains.skia.Image
 import org.jetbrains.skia.Rect
 import java.util.concurrent.atomic.AtomicReference
 import java.util.Locale
 
-internal fun currentAlbum(log: PluginLog? = null, studio:dev.saltmotion.editor.CoverStudio? = null): AlbumKey? = runCatching {
-    val item = WorkshopApi.playback.getCurrentMediaItem() ?: return null
-    studio?.playbackAlbum(item.albumArtist.ifBlank { item.artist },item.album,item.path)
-        ?: AlbumKey(item.albumArtist.ifBlank { item.artist }, item.album).takeIf { it.valid }
+private fun currentTrack(log: PluginLog? = null): MediaItem? = runCatching {
+    WorkshopApi.playback.getCurrentMediaItem()
 }.onFailure { error -> log?.logOnce("metadata-error", "Playback metadata unavailable: ${error.javaClass.name}: ${error.message}") }.getOrNull()
+
+private fun albumOf(item: MediaItem?, cover: SavedCover?): AlbumKey? = item?.let {
+    CoverStudio.effectiveAlbum(it.albumArtist.ifBlank { it.artist }, it.album, cover?.motionRef)
+}
 
 /** The native Image keeps its own layout, crop, rotation and clip. */
 internal class MotionCoverElement(private val runtime: MotionRuntime) : ModifierNodeElement<MotionCoverNode>() {
@@ -64,6 +68,10 @@ internal class MotionCoverNode(private val runtime: MotionRuntime) : Modifier.No
     private var loading: Job? = null
     private var watching: Job? = null
     private var frameRates: FrameRateStats? = null
+    // Poster ownership stays on the node dispatcher, independently of the animation session.
+    private var posterName: String? = null
+    private var posterImage: Image? = null
+    private var posterLoad: Job? = null
 
     override fun onAttach() {
         runtime.log.log("Cover node attached")
@@ -73,8 +81,15 @@ internal class MotionCoverNode(private val runtime: MotionRuntime) : Modifier.No
             var retryAt = 0L
             var waiting: String? = null
             while (isActive && runtime.active) {
-                val options = runtime.studio?.playbackOptions(runtime.settings) ?: runtime.settings
-                val album = currentAlbum(runtime.log,runtime.studio)
+                val track = currentTrack(runtime.log)
+                val saved = track?.let { runtime.studio?.store?.find(it.path) }
+                updatePoster(saved)
+                val album = albumOf(track, saved)
+                val options = when {
+                    saved == null -> runtime.settings
+                    saved.motionRef == null || album == null -> runtime.settings.copy(enabled = false)
+                    else -> runtime.settings.copy(bindings = "${album.artist} | ${album.album} = ${saved.motionRef}")
+                }
                 val focused = currentValueOf(LocalWindowInfo).isWindowFocused
                 val reason = when {
                     !options.enabled -> "disabled"
@@ -100,6 +115,37 @@ internal class MotionCoverNode(private val runtime: MotionRuntime) : Modifier.No
                 delay(350)
             }
             cancelRequest()
+        }
+    }
+
+    private fun updatePoster(saved: SavedCover?) {
+        if (posterName == saved?.poster) return
+        posterLoad?.cancel()
+        posterImage?.close()
+        posterImage = null
+        posterName = saved?.poster
+        revision.intValue++
+        val studio = runtime.studio ?: return
+        if (saved == null) return
+        posterLoad = coroutineScope.launch {
+            var opened: Image? = null
+            try {
+                withContext(Dispatchers.IO) {
+                    opened = rasterImage(Files.readAllBytes(studio.store.poster(saved)), 1600)
+                }
+                ensureActive()
+                if (posterName == saved.poster && runtime.active) {
+                    posterImage = opened
+                    opened = null
+                    revision.intValue++
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                runtime.log.logOnce("poster-${saved.poster}", "Custom playback poster unavailable: ${error.javaClass.simpleName}")
+            } finally {
+                opened?.close()
+            }
         }
     }
 
@@ -198,32 +244,53 @@ internal class MotionCoverNode(private val runtime: MotionRuntime) : Modifier.No
 
     override fun ContentDrawScope.draw() {
         runtime.log.logOnce("draw", "Cover node draw reached")
-        drawContent()
         revision.intValue
-        if (!runtime.active || !runtime.settings.enabled || !currentValueOf(LocalWindowInfo).isWindowFocused) return
-        synchronized(lock) {
-            if (drawingAlbum?.normalized != currentAlbum(studio=runtime.studio)?.normalized || drawingAlbum == null) return
-            frames.draw { image ->
-                frameRates?.drawn()
-                runtime.log.logOnce("paint-${drawingAlbum?.normalized}", "Animated cover draw reached")
-                val scale = maxOf(size.width / image.width, size.height / image.height)
-                val width = image.width * scale
-                val height = image.height * scale
-                clipRect {
-                    drawIntoCanvas {
-                        it.skiaCanvas.drawImageRect(image, Rect.makeLTRB(
-                            (size.width - width) / 2, (size.height - height) / 2,
-                            (size.width + width) / 2, (size.height + height) / 2,
-                        ))
-                    }
+        if (runtime.active) {
+            val track = currentTrack()
+            val saved = track?.let { runtime.studio?.store?.find(it.path) }
+            val canAnimate = (saved == null || saved.motionRef != null) && runtime.settings.enabled &&
+                currentValueOf(LocalWindowInfo).isWindowFocused
+            val rendered = if (canAnimate) synchronized(lock) {
+                val album = drawingAlbum
+                if (album == null || album.normalized != albumOf(track, saved)?.normalized) false
+                else frames.draw { image ->
+                    drawContent()
+                    frameRates?.drawn()
+                    runtime.log.logOnce("paint-${album.normalized}", "Animated cover draw reached")
+                    drawCoverImage(image)
                 }
+            } else false
+            if (rendered) return
+            val poster = posterImage
+            if (saved != null && saved.poster == posterName && poster != null) {
+                runtime.log.logOnce("static-playback", "Custom static playback cover drawn")
+                drawCoverImage(poster)
+                return
+            }
+        }
+        drawContent()
+    }
+
+    private fun ContentDrawScope.drawCoverImage(image: Image) {
+        val scale = maxOf(size.width / image.width, size.height / image.height)
+        val width = image.width * scale
+        val height = image.height * scale
+        clipRect {
+            drawIntoCanvas {
+                it.skiaCanvas.drawImageRect(image, Rect.makeLTRB(
+                    (size.width - width) / 2, (size.height - height) / 2,
+                    (size.width + width) / 2, (size.height + height) / 2,
+                ))
             }
         }
     }
 
     override fun onDetach() {
         synchronized(lock) { attached = false; generation++; drawingAlbum = null; frames.close() }
-        loading?.cancel(); watching?.cancel()
+        loading?.cancel(); watching?.cancel(); posterLoad?.cancel()
+        posterImage?.close()
+        posterImage = null
+        posterName = null
         session.getAndSet(null)?.let(runtime::remove)
     }
 }

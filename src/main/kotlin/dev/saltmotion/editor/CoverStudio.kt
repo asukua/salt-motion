@@ -5,7 +5,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.xuncorp.spw.workshop.api.WorkshopApi
 import dev.saltmotion.MotionRuntime
-import dev.saltmotion.MotionSettings
 import dev.saltmotion.PluginLog
 import dev.saltmotion.am.AlbumCatalog
 import java.nio.file.Files
@@ -22,7 +21,6 @@ internal class CoverStudio(val root: Path, val runtime: MotionRuntime, val log: 
         private set
     fun open(value: SelectedTrack) { if (!stopped.get()) { track = value; log.log("Cover editor opened") } }
     fun dismiss() { track = null }
-    fun playbackAlbum(artist:String,album:String,path:String): dev.saltmotion.am.AlbumKey? = effectiveAlbum(artist,album,store.find(path)?.motionRef)
     companion object {
         fun effectiveAlbum(artist:String,album:String,motionRef:String?):dev.saltmotion.am.AlbumKey? {
             val key=dev.saltmotion.am.AlbumKey(artist,album)
@@ -30,13 +28,6 @@ internal class CoverStudio(val root: Path, val runtime: MotionRuntime, val log: 
             val ref=motionRef?.let(dev.saltmotion.am.AlbumRef::parse)?:return null
             return dev.saltmotion.am.AlbumKey(artist.ifBlank{"Apple Music"},album.ifBlank{"album-${ref.id}"})
         }
-    }
-    fun playbackOptions(settings: MotionSettings): MotionSettings {
-        val current = runCatching { WorkshopApi.playback.getCurrentMediaItem() }.getOrNull() ?: return settings
-        val cover = store.find(current.path) ?: return settings
-        val key=effectiveAlbum(current.albumArtist.ifBlank{current.artist},current.album,cover.motionRef)
-        return if (cover.motionRef == null || key==null) settings.copy(enabled=false)
-        else settings.copy(bindings="${key.artist} | ${key.album} = ${cover.motionRef}")
     }
     fun image(candidate: CoverCandidate): Path {
         check(!stopped.get())
@@ -67,6 +58,8 @@ internal class CoverStudio(val root: Path, val runtime: MotionRuntime, val log: 
                     stopped.get() || Thread.currentThread().isInterrupted || !WorkshopApi.manager.isPermissionGranted(com.xuncorp.spw.workshop.api.PluginPermission.LIBRARY_WRITE)
                 }
                 store.apply(listOf(path),poster,candidate.source.label,candidate.motionRef)
+            } catch (error: CoverTagWriter.ReplacementBlockedException) {
+                throw IllegalStateException("${error.message}。已写入 $count/${paths.size} 首", error)
             } catch (error: Exception) {
                 val name=runCatching{pathOf(path).fileName.toString()}.getOrDefault("无法解析文件名")
                 throw IllegalStateException("已完成 $count/${paths.size} 首；$name：${error.message ?: error.javaClass.simpleName}",error)

@@ -2,7 +2,7 @@
 
 Salt Motion 为 **Salt Player for Windows（椒盐音乐）** 提供 Apple Music 动态专辑封面，以及歌曲右键菜单中的专辑封面自定义。
 
-**当前版本：0.2.2** · [下载插件](https://github.com/asukua/salt-motion/releases/latest) · [发行记录](https://github.com/asukua/salt-motion/releases)
+**当前版本：0.2.3** · [下载插件](https://github.com/asukua/salt-motion/releases/latest) · [发行记录](https://github.com/asukua/salt-motion/releases)
 
 支持 Windows / Steam 版 Salt Player 1.19.2 和 1.19.3。接口无法确认兼容时，相关功能会回退；1.19.3 的实际窗口效果仍需导入后检查。
 
@@ -34,6 +34,6 @@ Salt Motion 为 **Salt Player for Windows（椒盐音乐）** 提供 Apple Music
 
 ## 构建
 
-使用 JDK 25，运行 `./gradlew test plugin`。更多信息见[封面编辑器设计](docs/cover-studio.md)、[视频缓存与取帧](docs/cache-and-frames.md)和[版本验证记录](docs/release-0.2.2.md)。
+使用 JDK 25，运行 `./gradlew test plugin`。更多信息见[封面编辑器设计](docs/cover-studio.md)、[视频缓存与取帧](docs/cache-and-frames.md)和[版本验证记录](docs/release-0.2.3.md)。
 
 项目使用 [Apache-2.0](LICENSE)，第三方归属见 [NOTICE](NOTICE)。部分实现改编自 [Salt Artist](https://github.com/asukua/salt-artist)。

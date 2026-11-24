@@ -8,7 +8,17 @@ import java.util.*;
 
 /** Writes a sibling copy, verifies tags and encoded audio, then atomically replaces the original. */
 public final class CoverTagWriter {
+    // FLAC block length uses 24 bits, including the picture fields and media type.
+    // RFC 9639, sections 8.1 and 8.8.
+    private static final int FLAC_IMAGE_LIMIT = 0xff_ffff - 32 - "image/jpeg".length();
+
     private CoverTagWriter() {}
+
+    public static final class ReplacementBlockedException extends IOException {
+        private ReplacementBlockedException(FileSystemException cause) {
+            super("Windows 无法替换歌曲文件。请切到其他歌曲并关闭占用后重试", cause);
+        }
+    }
     public static boolean supported(Path file) {
         return Set.of("flac","mp3","m4a","mp4","wav","aif","aiff","ogg","opus","dsf").contains(extension(file));
     }
@@ -23,66 +33,121 @@ public final class CoverTagWriter {
         if(!Files.isRegularFile(target,LinkOption.NOFOLLOW_LINKS)||Files.isSymbolicLink(target)||!Files.isWritable(target))throw new IOException("歌曲不可写或不是本地普通文件");
         if(!Files.isRegularFile(image)||Files.size(image)>24_000_000)throw new IOException("封面图片不可用或过大");
         byte[] encoded=Files.readAllBytes(image);
-        if(!((encoded.length>3&&encoded[0]==(byte)255&&encoded[1]==(byte)216)||(encoded.length>8&&encoded[0]==(byte)137&&encoded[1]==80)))throw new IOException("写入歌曲的封面须为 JPEG 或 PNG 图片");
+        boolean jpeg = encoded.length > 3 && encoded[0] == (byte)255 && encoded[1] == (byte)216;
+        if(!(jpeg||(encoded.length>8&&encoded[0]==(byte)137&&encoded[1]==80)))throw new IOException("写入歌曲的封面须为 JPEG 或 PNG 图片");
+        boolean flac = extension(target).equals("flac");
+        boolean wasResized = false;
         try(var decoded=org.jetbrains.skia.Image.Companion.makeFromEncoded(encoded);var bitmap=new org.jetbrains.skia.Bitmap()){
             if(decoded.getWidth()>8192||decoded.getHeight()>8192||(long)decoded.getWidth()*decoded.getHeight()>33_554_432)throw new IOException("封面分辨率过大");
             bitmap.allocPixels(new org.jetbrains.skia.ImageInfo(decoded.getWidth(),decoded.getHeight(),org.jetbrains.skia.ColorType.BGRA_8888,org.jetbrains.skia.ColorAlphaType.PREMUL));
             if(!decoded.readPixels(bitmap))throw new IOException("封面图片不完整");
+            if (flac && encoded.length > FLAC_IMAGE_LIMIT) {
+                int width = decoded.getWidth();
+                int height = decoded.getHeight();
+                // A 1920px square fits below the FLAC limit even as uncompressed RGBA.
+                double scale = Math.min(1.0, 1920.0 / Math.max(width, height));
+                width = Math.max(1, (int) (width * scale));
+                height = Math.max(1, (int) (height * scale));
+                try (var surface = org.jetbrains.skia.Surface.Companion.makeRasterN32Premul(width, height)) {
+                    surface.getCanvas().drawImageRect(decoded, org.jetbrains.skia.Rect.makeWH(width, height));
+                    try (var resized = surface.makeImageSnapshot();
+                         var data = resized.encodeToData(org.jetbrains.skia.EncodedImageFormat.PNG, 100, 6)) {
+                        if (data == null) throw new IOException("无法缩放图片以写入 FLAC");
+                        encoded = data.getBytes();
+                        if (encoded.length > FLAC_IMAGE_LIMIT) {
+                            throw new IOException("缩放后的图片仍超过 FLAC 封面容量");
+                        }
+                        wasResized = true;
+                    }
+                }
+            }
         }
         String before=hashFile(target);String audioBefore=audioHash(target);
         Path temporary=target.resolveSibling(".salt-cover-"+UUID.randomUUID()+"."+extension(target));
-        Path backup=null;
+        Path resizedPoster = null;
         try {
-            Files.copy(target,temporary,StandardCopyOption.COPY_ATTRIBUTES);
-            ClassLoader loader=Class.forName("com.xuncorp.spw.workshop.api.WorkshopApi").getClassLoader();
-            Class<?> audioIo=loader.loadClass("org.jaudiotagger.audio.AudioFileIO");
-            Class<?> audioType=loader.loadClass("org.jaudiotagger.audio.AudioFile");
-            Class<?> tagType=loader.loadClass("org.jaudiotagger.tag.Tag");
-            Class<?> artType=loader.loadClass("org.jaudiotagger.tag.images.Artwork");
-            Object audio=audioIo.getMethod("read",File.class).invoke(null,temporary.toFile());
-            Object tag=audioType.getMethod("getTagOrCreateAndSetDefault").invoke(audio);
-            List<String> tagsBefore=textFields(tag,tagType,loader);
-            @SuppressWarnings("unchecked") var oldImages=(List<Object>)tagType.getMethod("getArtworkList").invoke(tag);
-            var keep=new ArrayList<Object>();
-            boolean explicitFront=false;
-            for(var old:oldImages)if((Integer)artType.getMethod("getPictureType").invoke(old)==3)explicitFront=true;
-            for(int i=0;i<oldImages.size();i++){
-                var old=oldImages.get(i);int type=(Integer)artType.getMethod("getPictureType").invoke(old);
-                if(explicitFront?type!=3:i!=0)keep.add(old);
+            if (wasResized) {
+                resizedPoster = Files.createTempFile(image.getParent(), ".flac-cover-", ".png");
+                Files.write(resizedPoster, encoded);
             }
-            Class<?> standard=loader.loadClass("org.jaudiotagger.tag.images.StandardArtwork");
-            Object artwork=standard.getMethod("createArtworkFromFile",File.class).invoke(null,image.toFile());
-            artType.getMethod("setPictureType",int.class).invoke(artwork,3);
-            tagType.getMethod("deleteArtworkField").invoke(tag);
-            tagType.getMethod("setField",artType).invoke(tag,artwork);
-            for(var other:keep)tagType.getMethod("addField",artType).invoke(tag,other);
-            audioType.getMethod("commit").invoke(audio);
-            Object check=audioIo.getMethod("read",File.class).invoke(null,temporary.toFile());
-            Object checkTag=audioType.getMethod("getTag").invoke(check);
-            @SuppressWarnings("unchecked") var actual=(List<Object>)tagType.getMethod("getArtworkList").invoke(checkTag);
-            if(actual.isEmpty()||!Arrays.equals(Files.readAllBytes(image),(byte[])artType.getMethod("getBinaryData").invoke(actual.getFirst())))throw new IOException("封面写入后校验失败，原文件未替换");
-            if(actual.size()!=keep.size()+1)throw new IOException("原有附加封面数量校验失败，原文件未替换");
-            for(int i=0;i<keep.size();i++){
-                var expected=keep.get(i);var saved=actual.get(i+1);
-                if(!artType.getMethod("getPictureType").invoke(expected).equals(artType.getMethod("getPictureType").invoke(saved))||
-                    !Arrays.equals((byte[])artType.getMethod("getBinaryData").invoke(expected),(byte[])artType.getMethod("getBinaryData").invoke(saved)))throw new IOException("原有附加封面校验失败，原文件未替换");
-            }
-            if(!tagsBefore.equals(textFields(checkTag,tagType,loader)))throw new IOException("原有标签校验失败，原文件未替换");
+            rewriteTag(target, temporary, resizedPoster == null ? image : resizedPoster, encoded);
             if(!audioBefore.equals(audioHash(temporary)))throw new IOException("音频数据校验失败，原文件未替换");
             if(cancelled.getAsBoolean())throw new IOException("写入已取消，原文件未替换");
             if(!before.equals(hashFile(target)))throw new IOException("歌曲已被其他程序修改，请重新打开后再试");
             String key=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(target.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))).substring(0,20);
             Path directory=backupRoot.resolve(key);Files.createDirectories(directory);
-            backup=directory.resolve(System.currentTimeMillis()+"-"+UUID.randomUUID().toString().substring(0,8)+"-"+target.getFileName());
+            Path backup=directory.resolve(System.currentTimeMillis()+"-"+UUID.randomUUID().toString().substring(0,8)+"-"+target.getFileName());
             Files.copy(target,backup,StandardCopyOption.COPY_ATTRIBUTES);
             if(!before.equals(hashFile(backup))||!before.equals(hashFile(target)))throw new IOException("备份期间歌曲发生变化，原文件未替换");
             if(cancelled.getAsBoolean())throw new IOException("写入已取消，原文件未替换");
-            Files.move(temporary,target,StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
+            replaceOriginal(temporary, target, before, cancelled);
             return backup;
         } catch(InvocationTargetException error){
             var cause=error.getCause();throw new IOException("歌曲标签写入失败："+(cause.getMessage()==null?cause.getClass().getSimpleName():cause.getMessage()),cause);
-        } finally {Files.deleteIfExists(temporary);}
+        } finally {
+            try { Files.deleteIfExists(temporary); }
+            finally { if (resizedPoster != null) Files.deleteIfExists(resizedPoster); }
+        }
     }
+    private static void replaceOriginal(Path temporary, Path target, String expected,
+                                        java.util.function.BooleanSupplier cancelled) throws Exception {
+        for (int attempt = 0; ; attempt++) {
+            if (cancelled.getAsBoolean()) throw new IOException("写入已取消，原文件未替换");
+            try {
+                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                return;
+            } catch (FileSystemException error) {
+                if (error instanceof AtomicMoveNotSupportedException) {
+                    throw new IOException("歌曲所在磁盘不支持安全替换，原文件未修改", error);
+                }
+                if (!System.getProperty("os.name", "").startsWith("Windows") || error instanceof NoSuchFileException) throw error;
+                if (attempt >= 4) {
+                    throw new ReplacementBlockedException(error);
+                }
+                Thread.sleep(250L * (attempt + 1));
+                if (!expected.equals(hashFile(target))) throw new IOException("等待期间歌曲文件发生变化，请重新打开后重试", error);
+            }
+        }
+    }
+
+    private static void rewriteTag(Path target, Path temporary, Path image, byte[] encoded) throws Exception {
+        Files.copy(target,temporary,StandardCopyOption.COPY_ATTRIBUTES);
+        ClassLoader loader=Class.forName("com.xuncorp.spw.workshop.api.WorkshopApi").getClassLoader();
+        Class<?> audioIo=loader.loadClass("org.jaudiotagger.audio.AudioFileIO");
+        Class<?> audioType=loader.loadClass("org.jaudiotagger.audio.AudioFile");
+        Class<?> tagType=loader.loadClass("org.jaudiotagger.tag.Tag");
+        Class<?> artType=loader.loadClass("org.jaudiotagger.tag.images.Artwork");
+        Object audio=audioIo.getMethod("read",File.class).invoke(null,temporary.toFile());
+        Object tag=audioType.getMethod("getTagOrCreateAndSetDefault").invoke(audio);
+        List<String> tagsBefore=textFields(tag,tagType,loader);
+        @SuppressWarnings("unchecked") var oldImages=(List<Object>)tagType.getMethod("getArtworkList").invoke(tag);
+        var keep=new ArrayList<Object>();
+        boolean explicitFront=false;
+        for(var old:oldImages)if((Integer)artType.getMethod("getPictureType").invoke(old)==3)explicitFront=true;
+        for(int i=0;i<oldImages.size();i++){
+            var old=oldImages.get(i);int type=(Integer)artType.getMethod("getPictureType").invoke(old);
+            if(explicitFront?type!=3:i!=0)keep.add(old);
+        }
+        Class<?> standard=loader.loadClass("org.jaudiotagger.tag.images.StandardArtwork");
+        Object artwork=standard.getMethod("createArtworkFromFile",File.class).invoke(null,image.toFile());
+        artType.getMethod("setPictureType",int.class).invoke(artwork,3);
+        tagType.getMethod("deleteArtworkField").invoke(tag);
+        tagType.getMethod("setField",artType).invoke(tag,artwork);
+        for(var other:keep)tagType.getMethod("addField",artType).invoke(tag,other);
+        audioType.getMethod("commit").invoke(audio);
+        Object check=audioIo.getMethod("read",File.class).invoke(null,temporary.toFile());
+        Object checkTag=audioType.getMethod("getTag").invoke(check);
+        @SuppressWarnings("unchecked") var actual=(List<Object>)tagType.getMethod("getArtworkList").invoke(checkTag);
+        if(actual.isEmpty()||!Arrays.equals(encoded,(byte[])artType.getMethod("getBinaryData").invoke(actual.getFirst())))throw new IOException("封面写入后校验失败，原文件未替换");
+        if(actual.size()!=keep.size()+1)throw new IOException("原有附加封面数量校验失败，原文件未替换");
+        for(int i=0;i<keep.size();i++){
+            var expected=keep.get(i);var saved=actual.get(i+1);
+            if(!artType.getMethod("getPictureType").invoke(expected).equals(artType.getMethod("getPictureType").invoke(saved))||
+                !Arrays.equals((byte[])artType.getMethod("getBinaryData").invoke(expected),(byte[])artType.getMethod("getBinaryData").invoke(saved)))throw new IOException("原有附加封面校验失败，原文件未替换");
+        }
+        if(!tagsBefore.equals(textFields(checkTag,tagType,loader)))throw new IOException("原有标签校验失败，原文件未替换");
+    }
+
     private static List<String> textFields(Object tag,Class<?> tagType,ClassLoader loader) throws Exception {
         Class<?> field=loader.loadClass("org.jaudiotagger.tag.TagField");
         var values=new ArrayList<String>();var fields=(Iterator<?>)tagType.getMethod("getFields").invoke(tag);

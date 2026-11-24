@@ -175,6 +175,10 @@ private fun thumbnailUrl(c:CoverCandidate):String=when(c.source){
         var wholeAlbum by remember{mutableStateOf(false)}
         var busy by remember{mutableStateOf(false)}
         var message by remember{mutableStateOf("")}
+        val applied = studio.store.find(track.path)?.let { saved ->
+            CoverCandidate(CoverSource.LOCAL, saved.poster, track.album, track.albumKey.artist,
+                "", "", motionRef = saved.motionRef, localFile = studio.store.poster(saved))
+        }
         var original by remember{mutableStateOf<ByteArray?>(null)}
         fun submit(){if(query.isNotBlank()&&!busy){submitted=query.trim();submittedSongs=songs;request++}}
         LaunchedEffect(track.id){original=withContext(Dispatchers.IO){runCatching{WorkshopApi.library.getCoverById(track.id).toCompletableFuture().get(8,java.util.concurrent.TimeUnit.SECONDS)}.getOrNull()}}
@@ -229,7 +233,7 @@ private fun thumbnailUrl(c:CoverCandidate):String=when(c.source){
                     val albumScope=wholeAlbum
                     scope.launch{busy=true;try{runInterruptible(Dispatchers.IO){studio.store.reset(studio.paths(track,albumScope))};message="已取消插件自定义，歌曲文件中的封面保持原样";selected=null}
                     catch(c:CancellationException){throw c}catch(e:Exception){message=e.message?:"无法取消自定义"}finally{busy=false}}
-                },panelWidth,panelHeight)
+                },panelWidth,panelHeight,applied)
         }
     }
 }
@@ -237,7 +241,7 @@ private fun thumbnailUrl(c:CoverCandidate):String=when(c.source){
 @OptIn(InternalComposeApi::class)
 @Composable internal fun StudioPanel(track:SelectedTrack,p:StudioPalette,query:String,onQuery:(String)->Unit,songs:Boolean,onSongs:(Boolean)->Unit,onSearch:()->Unit,
     candidates:List<CoverCandidate>,statuses:Map<CoverSource,String>,filter:CoverSource?,onFilter:(CoverSource?)->Unit,selected:CoverCandidate?,onSelect:(CoverCandidate)->Unit,
-    wholeAlbum:Boolean,onWholeAlbum:(Boolean)->Unit,busy:Boolean,message:String,original:ByteArray?,studio:CoverStudio?,onClose:()->Unit,onImport:()->Unit,onApply:()->Unit,onEmbed:()->Unit,onReset:()->Unit,width:Dp=1040.dp,height:Dp=738.dp) {
+    wholeAlbum:Boolean,onWholeAlbum:(Boolean)->Unit,busy:Boolean,message:String,original:ByteArray?,studio:CoverStudio?,onClose:()->Unit,onImport:()->Unit,onApply:()->Unit,onEmbed:()->Unit,onReset:()->Unit,width:Dp=1040.dp,height:Dp=738.dp,applied:CoverCandidate?=null) {
     var motionPane by remember { mutableStateOf(false) }
     // The host supplies MiSans, system or custom fonts through SaltTheme. Dialogs inherit it.
     CompositionLocalProvider(LocalStudioFontFamily provides HostUiBridge.textStyle(currentComposer).fontFamily) {
@@ -303,15 +307,15 @@ private fun thumbnailUrl(c:CoverCandidate):String=when(c.source){
                 Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Label("封面预览",p,14,weight=FontWeight.SemiBold);Spacer(Modifier.weight(1f));Label(if(selected==null)"当前封面"else"待应用",p,11,true)}
                 Spacer(Modifier.height(12.dp))
                 Box(Modifier.width(224.dp).align(Alignment.CenterHorizontally).aspectRatio(1f).clip(RoundedCornerShape(11.dp)).border(1.dp,p.stroke,RoundedCornerShape(11.dp))){
-                    CoverImageView(selected,studio,Modifier.fillMaxSize(),original,true)
+                    CoverImageView(selected ?: applied,studio,Modifier.fillMaxSize(),original,true)
                     if(selected?.animated==true&&studio!=null)AnimatedCoverPreview(selected,studio,track,Modifier.fillMaxSize())
                 }
                 Spacer(Modifier.height(16.dp))
                 Label(selected?.album?:track.album,p,16,weight=FontWeight.SemiBold,maxLines=2)
                 Label(selected?.artist?:track.albumKey.artist,p,12,true,maxLines=2)
                 Spacer(Modifier.height(10.dp))
-                Label(selected?.source?.label?:"歌曲内嵌封面",p,12,true)
-                Label(if(selected?.animated==true)"动态视频 + 静态封面"else"静态专辑封面",p,11,true)
+                Label(selected?.source?.label ?: if (applied != null) "已应用的自定义封面" else "歌曲内嵌封面",p,12,true)
+                Label(if((selected ?: applied)?.animated==true)"动态视频 + 静态封面"else"静态专辑封面",p,11,true)
                 if(selected?.width!=null)Label("${selected.width} × ${selected.height} 像素",p,11,true)
                 Spacer(Modifier.height(18.dp))
                 Label("应用范围",p,12,true)

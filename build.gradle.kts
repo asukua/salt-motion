@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "dev.saltmotion"
-version = "0.2.2"
+version = "0.2.3"
 java { toolchain.languageVersion.set(JavaLanguageVersion.of(25)) }
 kotlin {
     jvmToolchain(25)
